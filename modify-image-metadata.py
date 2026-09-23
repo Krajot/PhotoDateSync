@@ -1,10 +1,16 @@
-"""Modify image filesystem timestamps from Google Photos Takeout metadata.
+"""Modify image filesystem timestamps from EXIF or Google Photos metadata.
 
-For every image in a folder, reads the matching
-"<image filename>.supplemental-metadata.json", takes photoTakenTime.timestamp
-(unix), and writes it as the file's "date created" and "date modified".
+For every image in a folder:
+  1. If the image has an EXIF "Date/Time Original" tag, use it (interpreted as
+     camera local time) to write the file's "date created" and "date modified".
+  2. Otherwise, look for the matching
+     "<image filename>.supplemental-metadata.json", take
+     photoTakenTime.timestamp (unix), and use it instead.
 
-Windows-only setting of creation time (ctypes -> SetFileTime), stdlib only.
+On success the image moves to "modified-correctly" and its JSON metadata file
+(if any) is deleted. Windows-only creation-time setting via ctypes.
+
+Dependencies (pip): pillow  (+ optional pillow-heif for HEIC/HEIF EXIF).
 """
 
 import ctypes
@@ -16,6 +22,19 @@ import time
 from ctypes import wintypes
 from datetime import datetime
 from pathlib import Path
+
+try:
+    from PIL import Image, ExifTags
+except ImportError:
+    Image = None
+
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
+
+EXIF_DATETIME_ORIGINAL = 0x9003
 
 # Files whose extension is in this set are treated as images.
 IMAGE_EXTENSIONS = {
@@ -83,6 +102,31 @@ def move_overwrite(src, dst_dir):
     return dst
 
 
+def read_exif_datetime_original(image_path):
+    """Return EXIF Date/Time Original as a unix local-time timestamp.
+
+    Returns None if Pillow is missing, the tag is absent, or it cannot be
+    parsed as "YYYY:MM:DD HH:MM:SS".
+    """
+    if Image is None:
+        return None
+    try:
+        with Image.open(image_path) as img:
+            exif = img.getexif()
+            raw = exif.get(EXIF_DATETIME_ORIGINAL)
+            if raw is None:
+                raw = exif.get_ifd(ExifTags.IFD.Exif).get(EXIF_DATETIME_ORIGINAL)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        dt = datetime.strptime(str(raw), "%Y:%m:%d %H:%M:%S")
+    except ValueError:
+        return None
+    return int(time.mktime(dt.timetuple()))
+
+
 def read_timestamp(json_path):
     """Parse metadata json and return photoTakenTime.timestamp as an int."""
     with open(json_path, "r", encoding="utf-8") as fh:
@@ -111,29 +155,42 @@ def write_failure_report(image_name, error_text):
         fh.write(f"Error: {error_text}\n")
 
 
+def fail_image(image_path, json_path, error_text):
+    """Move the image (+ its JSON if present) to failed + write a report."""
+    move_overwrite(image_path, FAILED_DIR)
+    if json_path.exists():
+        move_overwrite(json_path, FAILED_DIR)
+    write_failure_report(image_path.name, error_text)
+
+
 def process_image(image_path):
     """Handle one image. Returns a status string for the summary."""
     json_path = Path(str(image_path) + JSON_SUFFIX)
 
-    if not json_path.exists():
-        move_overwrite(image_path, NO_MATCH_DIR)
-        return "failed-to-find-matches"
+    ts = read_exif_datetime_original(image_path)
+
+    if ts is None:
+        if not json_path.exists():
+            move_overwrite(image_path, NO_MATCH_DIR)
+            return "failed-to-find-matches"
+        try:
+            ts = read_timestamp(json_path)
+        except Exception as exc:
+            fail_image(image_path, json_path, str(exc))
+            return "failed"
 
     try:
-        ts = read_timestamp(json_path)
         # Set dates BEFORE moving so the move must be an in-place rename
         # (same volume guarantees timestamps are preserved).
         set_creation_time(image_path, ts)
         set_modified_time(image_path, ts)
     except Exception as exc:
-        move_overwrite(image_path, FAILED_DIR)
-        if json_path.exists():
-            move_overwrite(json_path, FAILED_DIR)
-        write_failure_report(image_path.name, str(exc))
+        fail_image(image_path, json_path, str(exc))
         return "failed"
 
     move_overwrite(image_path, MODIFIED_DIR)
-    move_overwrite(json_path, MODIFIED_DIR)
+    if json_path.exists():
+        json_path.unlink()
     return "modified-correctly"
 
 
