@@ -7,3 +7,6 @@ __pycache__/
 
 # IDE
 .idea/
+
+# Plan doc
+PLAN.md
