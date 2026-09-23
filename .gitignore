@@ -1,0 +1,6 @@
+# Real Google Photos Takeout data (never commit personal photo files)
+Data/
+
+# Python
+__pycache__/
+*.pyc
