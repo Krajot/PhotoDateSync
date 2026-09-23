@@ -164,7 +164,7 @@ def fail_image(image_path, json_path, error_text):
 
 
 def process_image(image_path):
-    """Handle one image. Returns a status string for the summary."""
+    """Handle one image. Returns (status, detail)."""
     json_path = Path(str(image_path) + JSON_SUFFIX)
 
     ts = read_exif_datetime_original(image_path)
@@ -172,12 +172,12 @@ def process_image(image_path):
     if ts is None:
         if not json_path.exists():
             move_overwrite(image_path, NO_MATCH_DIR)
-            return "failed-to-find-matches"
+            return "failed-to-find-matches", None
         try:
             ts = read_timestamp(json_path)
         except Exception as exc:
             fail_image(image_path, json_path, str(exc))
-            return "failed"
+            return "failed", str(exc)
 
     try:
         # Set dates BEFORE moving so the move must be an in-place rename
@@ -186,12 +186,12 @@ def process_image(image_path):
         set_modified_time(image_path, ts)
     except Exception as exc:
         fail_image(image_path, json_path, str(exc))
-        return "failed"
+        return "failed", str(exc)
 
     move_overwrite(image_path, MODIFIED_DIR)
     if json_path.exists():
         json_path.unlink()
-    return "modified-correctly"
+    return "modified-correctly", None
 
 
 def ask_folder():
@@ -218,21 +218,30 @@ def main():
     for d in (MODIFIED_DIR, FAILED_DIR, NO_MATCH_DIR):
         d.mkdir(exist_ok=True)
 
-    counts = {k: 0 for k in ("modified-correctly", "failed",
-                             "failed-to-find-matches")}
+    results = {k: [] for k in ("modified-correctly", "failed",
+                               "failed-to-find-matches")}
 
     for entry in sorted(folder.iterdir()):
         if not entry.is_file():
             continue
         if entry.suffix.lower() not in IMAGE_EXTENSIONS:
             continue
-        status = process_image(entry)
-        counts[status] += 1
+        status, detail = process_image(entry)
+        results[status].append((entry.name, detail))
         print(f"[{status}] {entry.name}")
 
-    print("\nDone.")
-    for key, value in counts.items():
-        print(f"  {key}: {value}")
+    print("\n=== Summary ===")
+    for status, items in results.items():
+        if status == "modified-correctly":
+            print(f"modified-correctly: {len(items)}")
+        elif status == "failed":
+            print(f"failed: {len(items)}")
+            for name, detail in items:
+                print(f"  - {name}: {detail}")
+        else:
+            print(f"failed-to-find-matches: {len(items)}")
+            for name, _ in items:
+                print(f"  - {name}")
 
 
 if __name__ == "__main__":

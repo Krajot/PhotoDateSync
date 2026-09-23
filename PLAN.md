@@ -47,7 +47,7 @@ On success the image moves to `modified-correctly` and any matching JSON is **de
 
    **FAILED:** move image (+ JSON if present) to `failed` and write `<image file name>.txt` report with: image name, error message, run date (overwritten on re-run).
 
-6. **Print summary counts** at end.
+6. **Print a brief end-of-run summary:** counts for `modified-correctly` / `failed` / `failed-to-find-matches`, the name + reason for every failed image, and the names of files with no matching JSON.
 
 ## Key decisions / answers from user
 
@@ -74,6 +74,7 @@ On success the image moves to `modified-correctly` and any matching JSON is **de
 - JSON timestamp may arrive as `str` (`"1554563902"`) or `int` → `int()` it.
 - `IMAGE_EXTENSIONS` constant is easily editable at top of file.
 - Pillow/HEIC: `pillow_heif` opener is registered if available; otherwise HEIC falls back to the JSON route.
+- End-of-run **summary block**: `=== Summary ===` followed by successful count and, for the problem cases, each file name with its failure reason (or a simple name list for no-match files).
 
 ## Verification
 
