@@ -2,7 +2,7 @@
 
 > Restore the real capture date on your photo files — from the image's own EXIF metadata or its Google Photos Takeout JSON.
 
-**Short description:** Windows script that fixes an image's file **"date created"** and **"date modified"** so they match when the photo was actually taken, using EXIF `Date/Time Original` first and the matching Google Photos `photoTakenTime` metadata as fallback.
+**Short description:** Windows script that fixes an image's file **"date created"** and **"date modified"** so they match when the photo was actually taken, using EXIF metadate from the image `Date/Time Original` first and the matching Google Photos `photoTakenTime` metadata taken from google takeout as fallback.
 
 ## Problem it solves
 
